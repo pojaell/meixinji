@@ -41,9 +41,34 @@
 
   function getCharDisplayName(charId) {
     if (!charId) return "角色";
-    const preset = (window.XXJ_STATE_PRESETS || {})[charId];
-    if (preset && preset.name) return preset.name;
-    return charId;
+
+    // 1. STATE_PRESETS(slug 预设,如 "chenzixi")
+    try {
+      const preset = (window.XXJ_STATE_PRESETS || {})[charId];
+      if (preset && preset.name) return String(preset.name).trim();
+    } catch { /* ignore */ }
+
+    // 2. CHAR_PERSONA_STORE(UUID 实际角色)— 绝大多数情况
+    try {
+      const D = window.XXJ_DB;
+      if (D && D.getKv && D.K && D.K.CHAR_PERSONA_STORE) {
+        const store = D.getKv(D.K.CHAR_PERSONA_STORE);
+        if (store && Array.isArray(store.items)) {
+          const hit = store.items.find(x => x && String(x.id) === String(charId));
+          if (hit) {
+            const dn = String(hit.displayName || hit.name || "").trim();
+            if (dn) return dn;
+          }
+        }
+      }
+    } catch { /* ignore */ }
+
+    // 3. 兑底:UUID 不要再让弹层标题被一堆字符挤变形
+    const s = String(charId);
+    if (s.length > 12 && /^[0-9a-f-]+$/i.test(s)) {
+      return "这位";
+    }
+    return s;
   }
 
   function injectCss() {

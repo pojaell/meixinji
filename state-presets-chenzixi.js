@@ -19,6 +19,7 @@
   // 玉山君·陈子奚(杭州回春堂郎主,古风医家)
   // ============================================================
   window.XXJ_STATE_PRESETS["chenzixi"] = {
+    name: "陈子奚",
     routineEnabled: true,
     schedule: [
       { startHour: 0,  endHour: 5,  location: "回春堂·后院卧房", activity: "沉睡",                    busy: "asleep",    moodShift: -0.05, allowProactive: false },

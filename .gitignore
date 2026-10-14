@@ -25,3 +25,8 @@ package-lock.json
 # 一次性测试脚本(siliconflow 对比、智谱 JWT 对比)
 scripts/test-jwt.js
 scripts/test-jwt-vs-pyjwt.js
+
+# commit 辅助脚本(临时,只在 push 时用)
+scripts/do-amend.py
+scripts/do-commit.py
+scripts/commit-msg.txt
