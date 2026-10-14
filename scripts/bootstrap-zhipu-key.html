@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>智谱 Embedding · 一次性导入</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 540px; margin: 60px auto; padding: 0 20px; color: #2a2a2a; line-height: 1.6; }
+    h1 { font-size: 18px; }
+    code { background: #f5f1ea; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+    .ok { color: #2e7d32; font-weight: 600; }
+    .err { color: #c0392b; font-weight: 600; }
+    .step { background: #f9f6ef; border: 1px solid #e8e1d4; border-radius: 8px; padding: 12px 16px; margin: 12px 0; }
+    button { padding: 8px 18px; border-radius: 999px; border: 1px solid #d9d2c5; background: #fff; cursor: pointer; font-size: 14px; }
+    button.primary { background: #2a2a2a; color: #fff; border-color: #2a2a2a; }
+  </style>
+</head>
+<body>
+  <h1>智谱 Embedding · 一次性导入</h1>
+  <p>把智谱 API Key 写进本机 IndexedDB(<code>xxjDesktop.ai_profiles</code>),供 <code>window.RP_AI.embeddings()</code> 使用。</p>
+  <p><strong>注意</strong>:这个页面只在你的本地浏览器里执行,不会上传 Key 到任何地方。</p>
+
+  <div class="step">
+    <strong>Step 1.</strong> 把智谱 API Key 粘到下面输入框:<br><br>
+    <input id="keyInput" type="text" placeholder="c177e575...d481289c30.On9Irm2h7UkIzeuD" style="width: 100%; padding: 8px; font-size: 14px; border: 1px solid #d9d2c5; border-radius: 6px;">
+  </div>
+
+  <div class="step">
+    <strong>Step 2.</strong> 点下方按钮 → 自动写入 IndexedDB → 调用一次 embeddings 测试连通性。
+    <br><br>
+    <button id="goBtn" class="primary">写入并测试</button>
+  </div>
+
+  <div id="result"></div>
+
+  <hr style="margin: 30px 0; border: none; border-top: 1px solid #e8e1d4;">
+  <p style="font-size: 12px; color: #888;">
+    跑完后这个文件可以删除。<br>
+    Key 位置:浏览器开发者工具 → Application → IndexedDB → xxjDesktop → ai_profiles。
+  </p>
+
+<script>
+(function () {
+  // ★ 跟 db.js 完全一致的 schema(否则新建一个空 DB 后会找不到 store)
+  const DB_NAME = "xxjDesktop";
+  const DB_VERSION = 4;
+  const STORE_PROFILES = "ai_profiles";
+  const STORE_KV = "kv";
+
+  const KEY_NAME = "智谱-embedding";
+  const KEY_BASE = "https://open.bigmodel.cn/api/paas/v4";
+  const KEY_MODEL = "embedding-2";
+
+  function $(id) { return document.getElementById(id); }
+
+  function setResult(html, isErr) {
+    const r = $("result");
+    r.innerHTML = `<div class="${isErr ? "err" : "ok"}" style="margin-top:16px">${html}</div>`;
+  }
+
+  /**
+   * 智谱新版 API Key 格式：{id}.{secret}。需要用 HMAC-SHA256 生成 JWT token。
+   * 纯浏览器实现：Web Crypto API + base64url。
+   * @param {string} apiKey
+   * @returns {Promise<string>} JWT token；不是 {id}.{secret} 格式时返回空串
+   */
+  async function buildJwtFromApiKey(apiKey) {
+    const parts = String(apiKey || "").split(".");
+    if (parts.length !== 2 || !parts[0] || !parts[1]) return "";
+    const [id, secret] = parts;
+    const header = { typ: "JWT", alg: "HS256", sign_type: "SIGN" };
+    const nowMs = Date.now();
+    const payload = {
+      api_key: id,
+      exp: nowMs + 3600 * 1000,
+      timestamp: nowMs,
+      iat: nowMs
+    };
+    const enc = new TextEncoder();
+    const base64url = (s) => {
+      const b = btoa(typeof s === "string" ? s : String.fromCharCode(...new Uint8Array(s)));
+      return b.replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+    };
+    const headerB64 = base64url(JSON.stringify(header));
+    const payloadB64 = base64url(JSON.stringify(payload));
+    const signingInput = `${headerB64}.${payloadB64}`;
+    const key = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    const signature = await crypto.subtle.sign("HMAC", key, enc.encode(signingInput));
+    const sigB64 = base64url(new Uint8Array(signature));
+    return `${signingInput}.${sigB64}`;
+  }
+
+  function openDb() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        // 这里必须把 db.js 里的全部 store 都建上,避免我们新建一个空 DB
+        const idb = e.target.result;
+        if (!idb.objectStoreNames.contains(STORE_KV)) idb.createObjectStore(STORE_KV, { keyPath: "key" });
+        if (!idb.objectStoreNames.contains(STORE_PROFILES)) idb.createObjectStore(STORE_PROFILES, { keyPath: "id" });
+        if (!idb.objectStoreNames.contains("media_blobs")) idb.createObjectStore("media_blobs", { keyPath: "id" });
+        if (!idb.objectStoreNames.contains("minimax_tts_cache")) idb.createObjectStore("minimax_tts_cache", { keyPath: "cacheKey" });
+        if (!idb.objectStoreNames.contains("chat_thread_msgs")) idb.createObjectStore("chat_thread_msgs", { keyPath: "threadKey" });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(new Error("打开 IndexedDB 失败:" + (req.error?.message || "未知")));
+    });
+  }
+
+  $("goBtn").addEventListener("click", async () => {
+    const key = ($("keyInput").value || "").trim();
+    if (!key) {
+      setResult("请先粘贴 Key 再点按钮。", true);
+      return;
+    }
+
+    setResult("正在写入 IndexedDB...");
+
+    try {
+      const db = await openDb();
+
+      // 写 ai_profiles 表
+      const tx = db.transaction(STORE_PROFILES, "readwrite");
+      const store = tx.objectStore(STORE_PROFILES);
+      const profileId = "zhipu_embedding_" + Date.now();
+      const profile = {
+        id: profileId,
+        name: KEY_NAME,
+        baseUrl: KEY_BASE,
+        model: KEY_MODEL,
+        apiKey: key,
+        temperature: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      // ai_profiles 用 keyPath:"id"（in-line key），只传对象、不传 key 参数
+      store.put(profile);
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(new Error("写入失败:" + (tx.error?.message || "未知")));
+      });
+
+      setResult(`✓ Key 已写入 profile:<br><code>${profileId}</code><br><br>正在调用 <code>${KEY_MODEL}</code> 测试连通性...`);
+      
+      // 测试调用一次 embeddings(先试直接 Bearer,不行再用 JWT)
+      const baseUrlRaw = KEY_BASE;
+      const jwtToken = await buildJwtFromApiKey(key);
+      const urlsToTry = [
+        { label: "Bearer 模式", auth: `Bearer ${key}` },
+        { label: "JWT 模式", auth: jwtToken }
+      ].filter(a => a.auth);
+
+      let data = null;
+      const errs = [];
+      for (const attempt of urlsToTry) {
+        try {
+          const res = await fetch(`${baseUrlRaw}/embeddings`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: attempt.auth
+            },
+            body: JSON.stringify({
+              model: KEY_MODEL,
+              input: "你好，这是测试向量化的句子。"
+            })
+          });
+          data = await res.json().catch(() => ({}));
+          if (res.ok) break;
+          const fullDump = JSON.stringify(data, null, 2);
+          const msg = (data.error && (data.error.message || data.error)) || data.message || `HTTP ${res.status}`;
+          errs.push(`${attempt.label}：${typeof msg === "string" ? msg : JSON.stringify(msg)}\n响应: ${fullDump}`);
+          data = null;
+        } catch (e) {
+          errs.push(`${attempt.label}：${e?.message || String(e)}`);
+        }
+      }
+      if (!data) throw new Error("两种鉴权方式都失败。\n" + errs.join("\n\n"));
+      const vec = data?.data?.[0]?.embedding;
+      if (!Array.isArray(vec)) throw new Error("接口返回数据格式异常");
+
+      setResult(
+        `✓ <strong>全部成功</strong><br>` +
+        `· profileId: <code>${profileId}</code><br>` +
+        `· 向量维度: <code>${vec.length}</code><br>` +
+        `· 前 5 个值: <code>[${vec.slice(0, 5).map(v => v.toFixed(4)).join(", ")}]</code><br><br>` +
+        `<strong>现在可以关闭这个页面。</strong> meixinji-temp 里的 <code>window.RP_AI.embeddings()</code> 已经能用这个 profile 了。`
+      );
+    } catch (e) {
+      setResult("✗ 失败:" + (e?.message || String(e)), true);
+    }
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 # 依赖
 node_modules/
 
-# 登录 / OAuth（私有，不公开）
+# 登录 / OAuth(私有,不公开)
 auth.js
 oauth-bootstrap.js
 
@@ -14,3 +14,14 @@ oauth-bootstrap.js
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 开发/调试临时文件,不上 git
+peek.out
+
+# 临时测试用的 package.json(只为对比 jsonwebtoken 输出,不是项目依赖)
+package.json
+package-lock.json
+
+# 一次性测试脚本(siliconflow 对比、智谱 JWT 对比)
+scripts/test-jwt.js
+scripts/test-jwt-vs-pyjwt.js

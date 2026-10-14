@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>硅基流动 Embedding · 一次性导入</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 540px; margin: 60px auto; padding: 0 20px; color: #2a2a2a; line-height: 1.6; }
+    h1 { font-size: 18px; }
+    code { background: #f5f1ea; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+    .ok { color: #2e7d32; font-weight: 600; }
+    .err { color: #c0392b; font-weight: 600; }
+    .step { background: #f9f6ef; border: 1px solid #e8e1d4; border-radius: 8px; padding: 12px 16px; margin: 12px 0; }
+    button { padding: 8px 18px; border-radius: 999px; border: 1px solid #d9d2c5; background: #fff; cursor: pointer; font-size: 14px; }
+    button.primary { background: #2a2a2a; color: #fff; border-color: #2a2a2a; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; overflow: auto; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>硅基流动 Embedding · 一次性导入</h1>
+  <p>把硅基流动 API Key 写进本机 IndexedDB(<code>xxjDesktop.ai_profiles</code>),供 <code>window.RP_AI.embeddings()</code> 使用。</p>
+  <p><strong>注意</strong>:这个页面只在你的本地浏览器里执行,不会上传 Key 到任何地方。</p>
+
+  <div class="step">
+    <strong>Step 1.</strong> 把硅基流动 API Key 粘到下面输入框:<br><br>
+    <input id="keyInput" type="text" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" style="width: 100%; padding: 8px; font-size: 14px; border: 1px solid #d9d2c5; border-radius: 6px;">
+  </div>
+
+  <div class="step">
+    <strong>Step 2.</strong> 点下方按钮 → 自动写入 IndexedDB → 调用一次 embeddings 测试连通性。
+    <br><br>
+    <button id="goBtn" class="primary">写入并测试</button>
+  </div>
+
+  <div id="result"></div>
+
+  <hr style="margin: 30px 0; border: none; border-top: 1px solid #e8e1d4;">
+  <p style="font-size: 12px; color: #888;">
+    模型: <code>BAAI/bge-m3</code>(1024 维,免费,SOTA 中文 embedding)<br>
+    Key 位置:浏览器开发者工具 → Application → IndexedDB → xxjDesktop → ai_profiles。<br>
+    跑完后这个文件可以删除。
+  </p>
+
+<script>
+(function () {
+  // ★ 跟 db.js 完全一致的 schema(否则新建一个空 DB 后会找不到 store)
+  const DB_NAME = "xxjDesktop";
+  const DB_VERSION = 4;
+  const STORE_PROFILES = "ai_profiles";
+  const STORE_KV = "kv";
+
+  // ★ 硅基流动(SiliconFlow)OpenAI 兼容配置
+  const KEY_NAME = "siliconflow-bge-m3";
+  const KEY_BASE = "https://api.siliconflow.cn/v1";
+  const KEY_MODEL = "BAAI/bge-m3";
+
+  function $(id) { return document.getElementById(id); }
+
+  function setResult(html, isErr) {
+    const r = $("result");
+    r.innerHTML = `<div class="${isErr ? "err" : "ok"}" style="margin-top:16px">${html}</div>`;
+  }
+
+  function openDb() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        // 必须把 db.js 里的全部 store 都建上,避免新建一个空 DB
+        const idb = e.target.result;
+        if (!idb.objectStoreNames.contains(STORE_KV)) idb.createObjectStore(STORE_KV, { keyPath: "key" });
+        if (!idb.objectStoreNames.contains(STORE_PROFILES)) idb.createObjectStore(STORE_PROFILES, { keyPath: "id" });
+        if (!idb.objectStoreNames.contains("media_blobs")) idb.createObjectStore("media_blobs", { keyPath: "id" });
+        if (!idb.objectStoreNames.contains("minimax_tts_cache")) idb.createObjectStore("minimax_tts_cache", { keyPath: "cacheKey" });
+        if (!idb.objectStoreNames.contains("chat_thread_msgs")) idb.createObjectStore("chat_thread_msgs", { keyPath: "threadKey" });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(new Error("打开 IndexedDB 失败:" + (req.error?.message || "未知")));
+    });
+  }
+
+  $("goBtn").addEventListener("click", async () => {
+    const key = ($("keyInput").value || "").trim();
+    if (!key) {
+      setResult("请先粘贴 Key 再点按钮。", true);
+      return;
+    }
+
+    // 客户端格式预检
+    if (!key.startsWith("sk-")) {
+      setResult("Key 格式不对:硅基流动的 Key 必须以 <code>sk-</code> 开头。请重新复制。", true);
+      return;
+    }
+    if (key.length < 50) {
+      setResult(`Key 太短(只有 ${key.length} 位),正常长度是 55 位。复制时可能漏了,请重新复制。`, true);
+      return;
+    }
+
+    setResult("正在写入 IndexedDB...");
+
+    try {
+      const db = await openDb();
+
+      // 写 ai_profiles 表
+      const tx = db.transaction(STORE_PROFILES, "readwrite");
+      const store = tx.objectStore(STORE_PROFILES);
+      const profileId = "siliconflow_bge_m3_" + Date.now();
+      const profile = {
+        id: profileId,
+        name: KEY_NAME,
+        baseUrl: KEY_BASE,
+        model: KEY_MODEL,
+        apiKey: key,
+        temperature: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      // ai_profiles 用 keyPath:"id"(in-line key),只传对象、不传 key 参数
+      store.put(profile);
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(new Error("写入失败:" + (tx.error?.message || "未知")));
+      });
+
+      setResult(`✓ Key 已写入 profile:<br><code>${profileId}</code><br><br>正在调用 <code>${KEY_MODEL}</code> 测试连通性...`);
+
+      // 测试调用一次 embeddings(硅基流动 = 标准 OpenAI 格式,Bearer)
+      const res = await fetch(`${KEY_BASE}/embeddings`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + key
+        },
+        body: JSON.stringify({
+          model: KEY_MODEL,
+          input: "你好，这是测试向量化的句子。"
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const fullDump = JSON.stringify(data, null, 2);
+        throw new Error(`HTTP ${res.status}\n完整响应:\n<pre>${fullDump.replace(/</g, "&lt;")}</pre>`);
+      }
+      const vec = data?.data?.[0]?.embedding;
+      if (!Array.isArray(vec)) {
+        throw new Error("接口返回数据格式异常,缺 data[0].embedding");
+      }
+
+      setResult(
+        `✓ <strong>全部成功</strong><br>` +
+        `· profileId: <code>${profileId}</code><br>` +
+        `· 模型: <code>${KEY_MODEL}</code><br>` +
+        `· 向量维度: <code>${vec.length}</code><br>` +
+        `· 前 5 个值: <code>[${vec.slice(0, 5).map(v => v.toFixed(4)).join(", ")}]</code><br><br>` +
+        `<strong>现在可以关闭这个页面。</strong> meixinji-temp 里的 <code>window.RP_AI.embeddings()</code> 已经能用这个 profile 了。`
+      );
+    } catch (e) {
+      setResult("✗ 失败:" + (e?.message || String(e)), true);
+    }
+  });
+})();
+</script>
+</body>
+</html>

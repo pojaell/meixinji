@@ -22042,8 +22042,8 @@ async function publishCharMomentFromAi(charId, opts) {
         text = String(parsed.text || "").trim();
       }
       if (mustPost) {
-        if (!text) text = directText || momentHint;
-        else if (parsed.ignore && !hasImgPlan) text = directText || momentHint || text;
+        if (!text) text = directText;
+        else if (parsed.ignore && !hasImgPlan) text = directText || text;
       } else if (parsed.ignore && !hasImgPlan) {
         if (opts?.proactive && maskId && tid) touchThreadCharMomentsProactiveProbe(maskId, tid);
         if (!opts?.quiet) showToast("\u8fd9\u6b21\u6ca1\u6709\u53d1\u51fa\u6765");
@@ -22053,7 +22053,7 @@ async function publishCharMomentFromAi(charId, opts) {
       text = directText;
     }
     text = normalizeMomentsCharPostBodyForPublish(
-      coerceMomentsPublishBody(text || directText || momentHint)
+      coerceMomentsPublishBody(text || directText || "")
     );
     imagePlan = normalizeMomentsCharPostImagePlan(imagePlan, candidates, genEnabled);
     const inlineDesc = extractMomentsInlineImageDescFromText(text);
@@ -30185,6 +30185,7 @@ function appendChatLogEntryForMaskThread(maskId, threadId, entry) {
 window.appendChatLogEntryForMaskThread = appendChatLogEntryForMaskThread;
 window.fillRichProseEl = fillRichProseEl;
 window.htmlToPlainTextForPrompt = htmlToPlainTextForPrompt;
+window.refreshChatMessages = () => { try { renderChatMessages(); } catch (e) { console.warn("refreshChatMessages failed:", e); } };
 
 const CHAT_THREAD_RECORD_EXPORT_FORMAT = "xxj-chat-thread-export";
 const CHAT_THREAD_RECORD_EXPORT_VERSION = 1;
@@ -44291,6 +44292,31 @@ function buildChatSystemPrompt(opts) {
   if (charLockLiveSession) {
     const live = buildCharLockLiveChatSystemAppend(charLockLiveSession);
     if (live) sys = `${sys}\n\n${live}`;
+  }
+  /* CASE · 角色日常与场景提示(开源版可选子系统) */
+  /* 接入位置：system prompt 拼接末尾。运行时动态读取 XXJ_ROUTINE 快照，*/
+  /* XXJ_ROUTINE 未加载 / 无 preset / 群聊 th 时静默跳过，不影响原有 prompt 完整性。*/
+  try {
+    if (
+      th && th.kind !== "group" &&
+      th.charId && String(th.charId).trim() &&
+      window.XXJ_ROUTINE && typeof window.XXJ_ROUTINE.buildPromptHint === "function"
+    ) {
+      const hint = window.XXJ_ROUTINE.buildPromptHint(String(th.charId));
+      if (hint) sys = `${sys}\n\n${hint}`;
+      else if (window.__xxjCaseDebug) console.warn("[CASE-Debug] hint 为空,charId=" + th.charId);
+    } else if (window.__xxjCaseDebug) {
+      console.warn("[CASE-Debug] 跳过:", JSON.stringify({
+        hasTh: !!th,
+        kind: th && th.kind,
+        charId: th && th.charId,
+        hasRoutine: !!window.XXJ_ROUTINE,
+        hasBuildFn: window.XXJ_ROUTINE && typeof window.XXJ_ROUTINE.buildPromptHint
+      }));
+    }
+  } catch (_caseHintErr) {
+    /* 角色上下文未就绪 / DB 未 hydrate / preset 异常时静默，不影响原 chat。 */
+    if (window.__xxjCaseDebug) console.warn("[CASE-Debug] 异常:", _caseHintErr);
   }
   return sys;
 }

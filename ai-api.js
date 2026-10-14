@@ -595,6 +595,54 @@
   }
 
   /**
+   * OpenAI 兼容 embeddings 接口。适配 OpenAI /v1/embeddings 与智谱 /v4/embeddings。
+   * 传入 input 可以是字符串或字符串数组；返回第一个 embedding（input 是字符串时）。
+   * @param {string | string[]} input
+   * @param {{ completionConfig?: { baseUrl?: string, apiKey?: string, model?: string }, signal?: AbortSignal }} [opts]
+   * @returns {Promise<number[]>} 第一个输入对应的向量数组
+   */
+  async function embeddings(input, opts) {
+    const cfg =
+      opts && opts.completionConfig && typeof opts.completionConfig === "object"
+        ? opts.completionConfig
+        : getConfig();
+    const baseUrl = normalizeBase(cfg.baseUrl || DEFAULT_BASE);
+    const apiKey = String(cfg.apiKey || "").trim();
+    const model = (String(cfg.model || "").trim() || "embedding-2");
+    if (!apiKey) {
+      throw new Error("请先在设置里填写并保存 API Key");
+    }
+    const url = `${baseUrl}/embeddings`;
+    const payload = {
+      model,
+      input: Array.isArray(input) ? input : String(input || "")
+    };
+    const fetchOpts = {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(payload)
+    };
+    if (opts && opts.signal) fetchOpts.signal = opts.signal;
+    const res = await fetch(url, fetchOpts);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg =
+        (data.error && (data.error.message || data.error)) || data.message || `HTTP ${res.status}`;
+      const err = new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+      err.__httpStatus = res.status;
+      throw err;
+    }
+    const vec = data && data.data && data.data[0] && data.data[0].embedding;
+    if (!Array.isArray(vec)) {
+      throw new Error("embedding 接口返回数据格式异常");
+    }
+    return vec;
+  }
+
+  /**
    * OpenAI 兼容 SSE 流式 chat/completions。
    * @param {Record<string, unknown>} body 须含 messages；stream 会被强制为 true
    * @param {{ signal?: AbortSignal, completionConfig?: object }} [opts]
@@ -769,6 +817,7 @@
     setStreamCapability,
     clearStreamCapabilityForConfig,
     clearAllStreamCapability,
-    testPing
+    testPing,
+    embeddings
   };
 })();

@@ -123,6 +123,18 @@
     /** 查岗（与 checkup.js 一致） */
     CHECKUP_CASES: "CHECKUP_CASES_V1",
     CHECKUP_REVERSE_SNOOP_LAST: "CHECKUP_REVERSE_SNOOP_LAST_V1",
+    /** CASE · 状态机全集: { v:1, byCharacter: { [characterId]: machineData } } */
+    STATE_MACHINES: "rp_state_machines_v1",
+    /** CASE · 日常场景全集: { v:1, byCharacter: { [characterId]: routineData } } */
+    STATE_ROUTINES: "rp_state_routines_v1",
+    /** CASE · 全局开关: { v:1, routineEnabled?:true, proactiveEnabled?:true } */
+    STATE_ENABLED: "rp_state_enabled_v1",
+    /** CASE · 农历节日年度映射(用户可写): { v:1, byYear:{ [yyyy]:{ "正月初一":"YYYY-MM-DD", ... } } } */
+    STATE_LUNAR_FESTIVALS: "rp_state_lunar_festivals_v1",
+    /** LI · 地点库(用户自建): [{ id, name, description, defaultActivity, tags, ... }] */
+    LOCATIONS: "rp_locations_v1",
+    /** LI · 邀请(临时拉角色去某地): { v:1, byCharacter:{ [charId]: Invitation } } */
+    INVITATIONS: "rp_invitations_v1",
     /** 漫游（与 roam.js 一致） */
     ROAM_STATE: "ROAM_STATE_V1",
     /** 主线 · 命运卡牌（与 roleplay.js 一致） */
