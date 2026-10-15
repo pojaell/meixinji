@@ -257,33 +257,54 @@
     return Promise.resolve();
   }
 
-  /** 从 persona.routinePreset 查 schedule。
+  /** 查找 schedule 数据源(返回 { schedule, overrides, routineEnabled, meta })。
    * 查找顺序:
-   *   1. CHAR_PERSONA_STORE.items[id].routinePreset (slug, 如 "chenzixi")
-   *   2. presets[slug] 命中 → 使用这个 preset
-   *   3. presets[slug] 未命中 (可能是 slug 写错或不含) → 回退 __default__
-   *   4. presets[charId] 直命中 (预设就是用 charId 做 key 的边缘场景)
-   *   5. 仍空 → 走 __default__
+   *   1. persona.routineSchedule (新: 直接挂 persona 上的作息数组)
+   *   2. persona.routinePreset  → XXJ_STATE_PRESETS[slug] 命中
+   *   3. presets[charId] 直命中 (边缘场景)
+   *   4. presets["__default__"] 兜底
+   * 都没有 → 返回 null
    */
   function defaultForCharacter(charId) {
     const presets = window.XXJ_STATE_PRESETS || {};
-    let presetKey = "";
+    let personaItem = null;
     try {
       const D = window.XXJ_DB;
       if (D && D.getKv && D.K && D.K.CHAR_PERSONA_STORE && charId) {
         const st = D.getKv(D.K.CHAR_PERSONA_STORE);
         if (st && Array.isArray(st.items)) {
-          const item = st.items.find(x => x && String(x.id) === String(charId));
-          if (item && item.routinePreset) {
-            const slug = String(item.routinePreset).trim();
-            if (slug && presets[slug]) {
-              presetKey = slug;
-            }
-          }
+          personaItem = st.items.find(x => x && String(x.id) === String(charId)) || null;
         }
       }
     } catch { /* ignore */ }
 
+    // 1. persona.routineSchedule 优先(新机制,用户自写或 LLM 生成的)
+    if (personaItem && Array.isArray(personaItem.routineSchedule) && personaItem.routineSchedule.length) {
+      try {
+        return {
+          characterId: charId,
+          routineEnabled: true,
+          schedule: personaItem.routineSchedule.map(x => ({ ...x })),
+          overrides: [],
+          history: [],
+          meta: {
+            source: "persona://routineSchedule",
+            presetKey: "",
+            schemaVersion: 1,
+            updatedAt: Number(personaItem.__routineScheduleUpdatedAt) || 0
+          }
+        };
+      } catch (e) {
+        console.warn("[CASE] defaultForCharacter persona.routineSchedule deepcopy failed:", e);
+      }
+    }
+
+    // 2. persona.routinePreset → XXJ_STATE_PRESETS[slug](旧机制,向下兼容)
+    let presetKey = "";
+    if (personaItem && personaItem.routinePreset) {
+      const slug = String(personaItem.routinePreset).trim();
+      if (slug && presets[slug]) presetKey = slug;
+    }
     if (!presetKey && charId && presets[charId]) presetKey = String(charId);
     if (!presetKey && presets["__default__"]) presetKey = "__default__";
     const preset = presetKey ? presets[presetKey] : null;

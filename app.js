@@ -49790,12 +49790,19 @@ function emptyCharPersona() {
     worldBookVolumeIds: [],
     avatar: "",
     openings: [],
-    /** CASE · 日常作息预设:角色走哪个 preset(空 = 走 __default__)
-     *  - "chenzixi" → 古代医家作息
-     *  - "__default__" → 通用现代日常
-     *  - 自定义(= "" 但 IndexedDB 里已有 schedule) → 走 IndexedDB 里保存的独立作息
+    /** CASE · 日常作息预设(旧):角色走哪个 preset(空 = 走 __default__)
+     *  保留向后兼容;新数据应优先写 routineSchedule。
      */
-    routinePreset: ""
+    routinePreset: "",
+    /** CASE · 角色专属作息(新):[{startHour, endHour, location, activity, busy, moodShift, allowProactive}]
+     *  像人设一样直接挂在 persona 上,优先于 routinePreset 的 preset 引用。
+     *  [] 表示无自定义作息,走 routinePreset/__default__。
+     */
+    routineSchedule: [],
+    /** CASE · 用户对作息的额外要求(供 LLM 参考):"夜猫子,3点睡 11点起", "午后固定看书" 等
+     *  自由文本,只在"生成专属作息"时拼到 prompt,不影响 routine 直接读取。
+     */
+    routineNotes: ""
   };
 }
 
@@ -50242,6 +50249,8 @@ function pickCharPersonaBody(x) {
     avatar: x.avatar,
     openings: normalizeCharOpeningsArray(x?.openings),
     routinePreset: x.routinePreset != null ? String(x.routinePreset) : "",
+    routineSchedule: Array.isArray(x.routineSchedule) ? x.routineSchedule.map(s => ({ ...s })) : [],
+    routineNotes: typeof x.routineNotes === "string" ? x.routineNotes : "",
     altPersona: altPersonaEnabled ? altPersonaRaw : null,
     altPersonaEnabled
   };
@@ -50731,6 +50740,19 @@ function readCharRoutinePresetFromForm() {
   return String(sel.value || "").trim();
 }
 
+function readCharRoutineNotesFromForm() {
+  const el = document.getElementById("char-routine-notes");
+  if (!el) return "";
+  return String(el.value || "");
+}
+
+function applyCharRoutineNotesToForm(notes) {
+  const el = document.getElementById("char-routine-notes");
+  if (!el) return;
+  el.value = String(notes || "");
+}
+
+
 /** 点"生成专属作息"按钮的处理函数 */
 async function onClickCharRoutineGen() {
   const btn = document.getElementById("char-routine-gen-btn");
@@ -50771,6 +50793,10 @@ async function onClickCharRoutineGen() {
     return;
   }
 
+  // 同步把表单上的 userNotes 也作为 backup,以防 p 是从 store 读出来的旧版本
+  const draftNotes = readCharRoutineNotesFromForm();
+  if (draftNotes) p = { ...p, routineNotes: draftNotes };
+
   if (btn) btn.disabled = true;
   if (status) status.textContent = "生成中…";
 
@@ -50787,7 +50813,8 @@ async function onClickCharRoutineGen() {
         };
       }
     }
-    const gen = await GEN.generateFromPersona(p, { presetHint });
+    // userNotes:persona.routineNotes 已经在 state-routine-generate.js 内有 fallback,这里再显式传一次更稳
+    const gen = await GEN.generateFromPersona(p, { presetHint, userNotes: p.routineNotes || "" });
     if (!gen || gen.ok !== true || !Array.isArray(gen.schedule)) {
       // 把具体原因 + LLM 实际返回的前 60 字显示出来
       let reason = "unknown";
@@ -50810,25 +50837,39 @@ async function onClickCharRoutineGen() {
       if (status) status.textContent = label + (snippet ? " | " + snippet + "…" : "");
       return;
     }
-    // 写到 IndexedDB 里的 routine(用 registry load + setSchedule + save)
-    let routine = null;
-    if (ROUTINE && typeof ROUTINE.load === "function") {
-      routine = await ROUTINE.load(p.id);
-    }
-    if (!routine) {
-      if (status) status.textContent = "生成失败:无法加载角色 routine";
+    // 直接写到 persona.routineSchedule(走 IndexedDB,作为新优先级最高的作息源)
+    const TBL = window.XXJ_ROUTINE_TABLE;
+    if (!TBL || typeof TBL.writeScheduleToPersona !== "function") {
+      if (status) status.textContent = "生成失败:表格模块未加载";
       return;
     }
-    const ok = await GEN.applyToRoutine(routine, gen);
-    if (!ok) {
-      if (status) status.textContent = "生成失败:写入 routine 失败";
+    const wrote = TBL.writeScheduleToPersona(p.id, gen.schedule);
+    if (!wrote) {
+      if (status) status.textContent = "生成失败:写入 persona 失败";
       return;
     }
+    if (typeof TBL.render === "function") {
+      TBL.render(p.id, gen.schedule);
+    }
+    // 顺便把 routineNotes 也回写(如果 persona 里有)
+    try {
+      const D3 = window.XXJ_DB;
+      if (D3 && typeof p.routineNotes === "string") {
+        const st3 = D3.getKv(D3.K.CHAR_PERSONA_STORE);
+        if (st3 && Array.isArray(st3.items)) {
+          const it3 = st3.items.find(x => x && String(x.id) === String(p.id));
+          if (it3 && it3.routineNotes !== p.routineNotes) {
+            it3.routineNotes = p.routineNotes;
+            D3.setKv(D3.K.CHAR_PERSONA_STORE, st3);
+          }
+        }
+      }
+    } catch { /* ignore */ }
     const segCount = gen.schedule.length;
-    if (status) status.textContent = "已生成 " + segCount + " 段作息并应用到当前角色";
-    // 给 LI · 位置条一个 re-render 信号
+    if (status) status.textContent = "已生成 " + segCount + " 段作息并写入档案";
+    // 给 LI · 位置条 / CASE · state-routine 一个 re-render 信号
     if (window.XXJ_STATE_EVENTS && window.XXJ_STATE_EVENTS.emit) {
-      window.XXJ_STATE_EVENTS.emit("rp-routine-changed", { charId: p.id, source: "自动" });
+      window.XXJ_STATE_EVENTS.emit("rp-routine-changed", { charId: p.id, source: "auto-gen" });
     }
     if (typeof showToast === "function") {
       showToast("已为「" + String(p.displayName || "该角色") + "」生成专属作息");
@@ -50846,6 +50887,10 @@ function bindCharRoutineGenButton() {
   if (!el || el.dataset.bound === "1") return;
   el.addEventListener("click", onClickCharRoutineGen);
   el.dataset.bound = "1";
+  // 顺手把作息表编辑器也初始化(按钮事件 + 行内编辑 + 清空)
+  if (window.XXJ_ROUTINE_TABLE && typeof window.XXJ_ROUTINE_TABLE.init === "function") {
+    window.XXJ_ROUTINE_TABLE.init();
+  }
 }
 
 function applyCharFieldsToForm() {
@@ -50869,6 +50914,15 @@ function applyCharFieldsToForm() {
   setCharMainWorldBookDraftIds(getCharMainWorldBookVolumeIds(p));
   refreshCharMainWorldBookBindChips();
   applyCharRoutinePresetToForm(p);
+  applyCharRoutineNotesToForm(p.routineNotes);
+  // 渲染作息表(可编辑)到 #char-routine-table;空 schedule 时表格区域隐藏
+  if (window.XXJ_ROUTINE_TABLE && typeof window.XXJ_ROUTINE_TABLE.render === "function") {
+    window.XXJ_ROUTINE_TABLE.render(p.id, p.routineSchedule);
+  } else {
+    // 表格模块还没加载时,先把容器清空避免陈旧内容
+    const tb = document.getElementById("char-routine-table");
+    if (tb) tb.innerHTML = "";
+  }
   applyCharAltFieldsToForm();
   applyCharStudioFieldsToForm();
 }
@@ -51001,7 +51055,8 @@ function collectCharPersonaFromForm() {
     defaultWorldBookVolumeId: worldBookVolumeIds[0] || "",
     altPersona,
     altPersonaEnabled: Boolean(altOn && altPersona),
-    routinePreset: readCharRoutinePresetFromForm()
+    routinePreset: readCharRoutinePresetFromForm(),
+    routineNotes: readCharRoutineNotesFromForm()
   };
 }
 

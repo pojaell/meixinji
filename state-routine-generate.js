@@ -40,10 +40,15 @@
     return lines.length ? lines.join("\n") : "(空人设)";
   }
 
-  /** 构造 prompt。persona + 可选 preset hint(已有 preset 时让 LLM 参考风格) */
+  /** 构造 prompt。persona + 可选 preset hint + 可选 userNotes(用户对作息的额外要求)
+   * userNotes 优先级最高,LLM 会优先满足里面的具体要求。
+   */
   function buildPrompt(persona, opts) {
     const desc = personaToDescription(persona);
-    const presetHint = (opts && opts.presetHint && typeof opts.presetHint === "object") ? opts.presetHint : null;
+    const o = opts || {};
+    const presetHint = (o.presetHint && typeof o.presetHint === "object") ? o.presetHint : null;
+    const userNotes = String(o.userNotes != null ? o.userNotes : (persona && persona.routineNotes) || "").trim();
+
     let hintBlock = "";
     if (presetHint) {
       hintBlock = "\n\n【风格参考(可改,不必照抄)】\n";
@@ -55,11 +60,18 @@
         }
       }
     }
+
+    let userBlock = "";
+    if (userNotes) {
+      userBlock = "\n\n【用户额外要求(优先满足这些)】\n" + userNotes + "\n";
+    }
+
     return [
       "你是「日常作息分析师」。根据下面给出的人设,推断这个角色一天 24 小时的作息安排。",
       "",
       desc,
       hintBlock,
+      userBlock,
       "",
       "【输出要求】",
       "1. 严格 JSON 数组(不要 Markdown 包裹、不要任何额外解释)",
@@ -75,6 +87,7 @@
       "4. 至少 1 段 busy:\"asleep\"(睡觉)",
       "5. 至少 1 段 allowProactive:true(可主动找你搭话)",
       "6. location / activity 严格匹配角色世界观(古风/现代/仙侠/校园 …)",
+      "7. 如果有「用户额外要求」,优先满足(例如要求夜猫子 3 点睡 11 点起,就必须把 asleep 段放在 3~11 时段)",
       "",
       "只输出 JSON,不要任何其它文字。"
     ].join("\n");
@@ -216,7 +229,11 @@
       console.warn("[ROUTINE_GEN] RP_AI.chatCompletions 不可用");
       return null;
     }
-    const prompt = buildPrompt(persona, opts || {});
+    // userNotes 优先 opts.userNotes,fallback 到 persona.routineNotes
+    const userNotes = (opts && typeof opts.userNotes === "string")
+      ? opts.userNotes
+      : (persona && typeof persona.routineNotes === "string" ? persona.routineNotes : "");
+    const prompt = buildPrompt(persona, Object.assign({}, opts || {}, { userNotes }));
     let data;
     try {
       data = await RP_AI.chatCompletions(

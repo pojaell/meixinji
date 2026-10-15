@@ -9981,6 +9981,125 @@ body.dark .char-lib-choice:hover {
 .char-routine-section .settings-api-field select.settings-api-input {
   font-size: 13px;
 }
+
+/* CASE · 角色作息表(可编辑) */
+.char-routine-notes-input {
+  font-size: 13px;
+  min-height: 56px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.55;
+}
+.char-routine-table-field {
+  /* 与其他 settings-api-field 保持一致宽度;表格本身 overflow */
+}
+.char-routine-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line, rgba(127,127,127,0.18));
+  border-radius: 8px;
+  background: var(--bg-card, rgba(255,255,255,0.02));
+  margin-top: 4px;
+}
+.char-routine-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  min-width: 540px;
+}
+.char-routine-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-elev, rgba(255,255,255,0.04));
+  color: var(--text-sub, #8a8a8a);
+  font-weight: 600;
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line, rgba(127,127,127,0.18));
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.char-routine-table tbody tr.char-routine-row {
+  border-bottom: 1px solid var(--line, rgba(127,127,127,0.10));
+}
+.char-routine-table tbody tr.char-routine-row:last-child {
+  border-bottom: none;
+}
+.char-routine-table tbody td {
+  padding: 4px 6px;
+  vertical-align: middle;
+}
+.char-routine-cell-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 12.5px;
+  color: var(--text-main, inherit);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.12s, background 0.12s;
+}
+.char-routine-cell-input:hover {
+  border-color: var(--line, rgba(127,127,127,0.22));
+}
+.char-routine-cell-input:focus,
+.char-routine-cell-input:focus-visible {
+  border-color: var(--accent, #6c5ce7);
+  background: var(--bg-card, rgba(255,255,255,0.03));
+}
+.char-routine-hour {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  max-width: 52px;
+}
+.char-routine-busy,
+.char-routine-proactive {
+  cursor: pointer;
+}
+.char-routine-ops {
+  white-space: nowrap;
+  text-align: right;
+  padding-right: 8px !important;
+}
+.char-routine-op-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--line, rgba(127,127,127,0.20));
+  border-radius: 4px;
+  color: var(--text-sub, #8a8a8a);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.char-routine-op-btn:hover {
+  background: var(--bg-elev, rgba(255,255,255,0.06));
+  color: var(--text-main, inherit);
+  border-color: var(--accent, #6c5ce7);
+}
+.char-routine-op-del:hover {
+  color: #e57373;
+  border-color: #e57373;
+}
+.char-routine-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.char-routine-table-actions .chip {
+  font-size: 12px;
+}
 .settings-api-field--char-summary-only .char-textarea--summary-solo,
 .settings-api-field--char-alt-persona .char-textarea--summary-solo {
   margin-top: 0;
