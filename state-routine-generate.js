@@ -181,6 +181,34 @@
    *   - completionConfig: 透传给 RP_AI.chatCompletions 的 config
    * @returns {Promise<{schedule: object[], meta: object} | null>}
    */
+
+  /**
+   * 构造 chatCompletions 的 completionConfig。
+   *  - 调用方显式传了 -> 用调用方的(尊重 override)
+   *  - 调用方没传 -> 用 RP_AI.getConfig() 拿全量(baseUrl/apiKey/model/temperature),
+   *    然后只覆盖 routine-gen 自己需要的字段(max_tokens/temperature)
+   *  - 都没有 -> 退到 { tag: "routine-gen" } 让 chatCompletions 自己 fallback
+   */
+  function buildCompletionConfig(opts) {
+    if (opts && opts.completionConfig && typeof opts.completionConfig === "object") {
+      return opts.completionConfig;
+    }
+    try {
+      const RP_AI = window.RP_AI;
+      const base = RP_AI && typeof RP_AI.getConfig === "function" ? RP_AI.getConfig() : null;
+      if (base && base.apiKey) {
+        return {
+          baseUrl: base.baseUrl,
+          apiKey: base.apiKey,
+          model: base.model,
+          temperature: 0.6,
+          tag: "routine-gen"
+        };
+      }
+    } catch { /* ignore */ }
+    return { tag: "routine-gen" };
+  }
+
   async function generateFromPersona(persona, opts) {
     if (!persona || typeof persona !== "object") return null;
     const RP_AI = window.RP_AI;
@@ -200,7 +228,9 @@
           max_tokens: 2500,
           temperature: 0.6
         },
-        { completionConfig: (opts && opts.completionConfig) || { tag: "routine-gen" } }
+        {
+          completionConfig: buildCompletionConfig(opts)
+        }
       );
     } catch (e) {
       console.warn("[ROUTINE_GEN] LLM call failed:", e);
