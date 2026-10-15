@@ -314,6 +314,7 @@
   <script src="state-holidays.js"></script>
   <script src="state-presets-chenzixi.js"></script>
   <script src="state-routine.js"></script>
+  <script src="state-routine-generate.js"></script>
   <script src="state-engine.js"></script>
   <script src="state-locations.js"></script>
   <script src="state-invitation.js"></script>
@@ -3304,9 +3305,47 @@
                 </div>
               </section>
 
-              <section class="settings-section char-studio-section" id="char-studio-section">
+              <section class="settings-section char-routine-section" id="char-routine-section">
                 <div class="settings-sec-head">
                   <span class="settings-sec-idx" aria-hidden="true">04</span>
+                  <div class="settings-sec-head-text">
+                    <span class="settings-sec-tape" aria-hidden="true"></span>
+                    <p class="widget-label">日常作息</p>
+                  </div>
+                </div>
+                <div class="settings-panel">
+                  <div class="settings-api-field">
+                    <label class="settings-api-field-k" for="char-routine-preset">作息预设</label>
+                    <select id="char-routine-preset" class="settings-api-input">
+                      <option value="">跟随全局（通用现代日常）</option>
+                    </select>
+                    <p class="settings-ai-key-note">
+                      选中的预设定了一套作息模板（时段、地点、活动）。下方“导入时”是选中预设为默认后自动插入的快捷生成入口。
+                    </p>
+                  </div>
+                  <div class="settings-api-field char-routine-gen-field">
+                    <label class="settings-api-field-k">按当前人设自动生成作息</label>
+                    <div class="char-routine-gen-row">
+                      <button
+                        type="button"
+                        class="chip ghost chip-xs"
+                        id="char-routine-gen-btn"
+                        aria-label="根据当前人设生成作息表"
+                      >
+                        <i class="ph ph-sparkle" aria-hidden="true"></i> 生成专属作息
+                      </button>
+                      <span id="char-routine-gen-status" class="char-routine-gen-status" aria-live="polite"></span>
+                    </div>
+                    <p class="settings-ai-key-note">
+                      点上面按钮后,会调用你当前启用的聊天模型,根据人设推断一天 24 小时的作息表、生成结果会覆盖当前 schedule（清空 overrides）,生成后全环境同步。
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section class="settings-section char-studio-section" id="char-studio-section">
+                <div class="settings-sec-head">
+                  <span class="settings-sec-idx" aria-hidden="true">05</span>
                   <div class="settings-sec-head-text">
                     <span class="settings-sec-tape" aria-hidden="true"></span>
                     <p class="widget-label">制作设定</p>

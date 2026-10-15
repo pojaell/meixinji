@@ -257,10 +257,36 @@
     return Promise.resolve();
   }
 
-  /** 从 window.XXJ_STATE_PRESETS 拷贝一份默认配置(不挂对象引用) */
+  /** 从 persona.routinePreset 查 schedule。
+   * 查找顺序:
+   *   1. CHAR_PERSONA_STORE.items[id].routinePreset (slug, 如 "chenzixi")
+   *   2. presets[slug] 命中 → 使用这个 preset
+   *   3. presets[slug] 未命中 (可能是 slug 写错或不含) → 回退 __default__
+   *   4. presets[charId] 直命中 (预设就是用 charId 做 key 的边缘场景)
+   *   5. 仍空 → 走 __default__
+   */
   function defaultForCharacter(charId) {
     const presets = window.XXJ_STATE_PRESETS || {};
-    const preset = presets[charId] || presets["__default__"];
+    let presetKey = "";
+    try {
+      const D = window.XXJ_DB;
+      if (D && D.getKv && D.K && D.K.CHAR_PERSONA_STORE && charId) {
+        const st = D.getKv(D.K.CHAR_PERSONA_STORE);
+        if (st && Array.isArray(st.items)) {
+          const item = st.items.find(x => x && String(x.id) === String(charId));
+          if (item && item.routinePreset) {
+            const slug = String(item.routinePreset).trim();
+            if (slug && presets[slug]) {
+              presetKey = slug;
+            }
+          }
+        }
+      }
+    } catch { /* ignore */ }
+
+    if (!presetKey && charId && presets[charId]) presetKey = String(charId);
+    if (!presetKey && presets["__default__"]) presetKey = "__default__";
+    const preset = presetKey ? presets[presetKey] : null;
     if (!preset) return null;
     try {
       return {
@@ -272,7 +298,12 @@
           replace: Array.isArray(o.replace) ? o.replace.map(x => ({ ...x })) : []
         })) : [],
         history: [],
-        meta: { ...(preset.meta || {}), source: "preset://" + charId, schemaVersion: 1 }
+        meta: {
+          ...(preset.meta || {}),
+          source: "preset://" + presetKey,
+          presetKey,
+          schemaVersion: 1
+        }
       };
     } catch (e) {
       console.warn("[CASE] defaultForCharacter deepcopy failed:", e);

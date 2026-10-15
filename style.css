@@ -9956,6 +9956,31 @@ body.dark .char-lib-choice:hover {
   vertical-align: -0.06em;
   opacity: 0.88;
 }
+
+/* CASE · 日常作息生成 */
+.char-routine-gen-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.char-routine-gen-row .chip i {
+  margin-right: 4px;
+  vertical-align: -0.06em;
+  opacity: 0.88;
+}
+.char-routine-gen-status {
+  font-size: 12px;
+  color: var(--text-sub, #8a8a8a);
+  font-family: "Space Mono", monospace;
+  letter-spacing: 0.04em;
+}
+.char-routine-gen-status:empty {
+  display: none;
+}
+.char-routine-section .settings-api-field select.settings-api-input {
+  font-size: 13px;
+}
 .settings-api-field--char-summary-only .char-textarea--summary-solo,
 .settings-api-field--char-alt-persona .char-textarea--summary-solo {
   margin-top: 0;

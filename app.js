@@ -49789,7 +49789,13 @@ function emptyCharPersona() {
     /** 角色档案级局部世界书（最多 8 本；密谈未单独绑定时生效） */
     worldBookVolumeIds: [],
     avatar: "",
-    openings: []
+    openings: [],
+    /** CASE · 日常作息预设:角色走哪个 preset(空 = 走 __default__)
+     *  - "chenzixi" → 古代医家作息
+     *  - "__default__" → 通用现代日常
+     *  - 自定义(= "" 但 IndexedDB 里已有 schedule) → 走 IndexedDB 里保存的独立作息
+     */
+    routinePreset: ""
   };
 }
 
@@ -50235,6 +50241,7 @@ function pickCharPersonaBody(x) {
     worldBookVolumeIds,
     avatar: x.avatar,
     openings: normalizeCharOpeningsArray(x?.openings),
+    routinePreset: x.routinePreset != null ? String(x.routinePreset) : "",
     altPersona: altPersonaEnabled ? altPersonaRaw : null,
     altPersonaEnabled
   };
@@ -50672,6 +50679,135 @@ function renderCharOpeningsEditor(openings) {
   refreshCharOpeningRowLabels();
 }
 
+
+/**
+ * 把角色的 routinePreset 写到表单的 <select>。
+ * 选项从 window.XXJ_STATE_PRESETS 动态生成(slug / label),空选项 = 走 __default__。
+ */
+function applyCharRoutinePresetToForm(p) {
+  const sel = document.getElementById("char-routine-preset");
+  if (!sel) return;
+  // 重建一次(避免外部新增 preset 后下拉选择陈旧)
+  const presets = (window.XXJ_STATE_PRESETS && typeof window.XXJ_STATE_PRESETS === "object")
+    ? window.XXJ_STATE_PRESETS : {};
+  const knownLabels = {
+    chenzixi: "陈子奚 (古风医家)",
+    "__default__": "通用现代日常"
+  };
+  const seen = new Set();
+  sel.replaceChildren();
+  const opt0 = document.createElement("option");
+  opt0.value = "";
+  opt0.textContent = "跟随全局(通用现代日常)";
+  sel.appendChild(opt0);
+  seen.add("");
+  for (const k of Object.keys(presets)) {
+    if (k === "__installed") continue;
+    if (seen.has(k)) continue;
+    const o = document.createElement("option");
+    o.value = String(k);
+    o.textContent = knownLabels[k] || String(k);
+    sel.appendChild(o);
+    seen.add(k);
+  }
+  // 写入 persona.routinePreset
+  const v = (p && p.routinePreset != null) ? String(p.routinePreset) : "";
+  sel.value = v;
+}
+
+/**
+ * 把表单上当前选中的 routinePreset 写回当前编辑中的 persona。
+ * 在 flushCharPersonaFormToActiveIfDirty / 等持久化钩子里被调用。
+ */
+function readCharRoutinePresetFromForm() {
+  const sel = document.getElementById("char-routine-preset");
+  if (!sel) return "";
+  return String(sel.value || "").trim();
+}
+
+/** 点"生成专属作息"按钮的处理函数 */
+async function onClickCharRoutineGen() {
+  const btn = document.getElementById("char-routine-gen-btn");
+  const status = document.getElementById("char-routine-gen-status");
+  const GEN = window.XXJ_ROUTINE_GEN;
+  const ROUTINE = window.XXJ_ROUTINE;
+  if (!GEN || typeof GEN.generateFromPersona !== "function") {
+    if (status) status.textContent = "生成器未加载";
+    return;
+  }
+  // 当前 persona(从表单实时读)
+  const p = readCharPersona();
+  // 合并表单上未持久化的 routinePreset(用户可能刚选过)
+  const draftPreset = readCharRoutinePresetFromForm();
+  if (draftPreset) p.routinePreset = draftPreset;
+  if (!p || !p.id) {
+    if (status) status.textContent = "请先在角色档案激活一个角色";
+    return;
+  }
+  if (!p.displayName && !p.summary) {
+    if (status) status.textContent = "请先填写显示名或人设概要";
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = "生成中…";
+
+  try {
+    // preset hint:如果 persona 选了某个 preset,让 LLM 沿用风格
+    const presetSlug = String(p.routinePreset || "").trim();
+    let presetHint = null;
+    if (presetSlug) {
+      const preset = (window.XXJ_STATE_PRESETS || {})[presetSlug];
+      if (preset) {
+        presetHint = {
+          label: preset.meta && preset.meta.label || presetSlug,
+          schedule: Array.isArray(preset.schedule) ? preset.schedule.slice(0, 8) : []
+        };
+      }
+    }
+    const gen = await GEN.generateFromPersona(p, { presetHint });
+    if (!gen || !Array.isArray(gen.schedule)) {
+      if (status) status.textContent = "生成失败:LLM 未返回有效 JSON";
+      return;
+    }
+    // 写到 IndexedDB 里的 routine(用 registry load + setSchedule + save)
+    let routine = null;
+    if (ROUTINE && typeof ROUTINE.load === "function") {
+      routine = await ROUTINE.load(p.id);
+    }
+    if (!routine) {
+      if (status) status.textContent = "生成失败:无法加载角色 routine";
+      return;
+    }
+    const ok = await GEN.applyToRoutine(routine, gen);
+    if (!ok) {
+      if (status) status.textContent = "生成失败:写入 routine 失败";
+      return;
+    }
+    const segCount = gen.schedule.length;
+    if (status) status.textContent = "已生成 " + segCount + " 段作息并应用到当前角色";
+    // 给 LI · 位置条一个 re-render 信号
+    if (window.XXJ_STATE_EVENTS && window.XXJ_STATE_EVENTS.emit) {
+      window.XXJ_STATE_EVENTS.emit("rp-routine-changed", { charId: p.id, source: "自动" });
+    }
+    if (typeof showToast === "function") {
+      showToast("已为「" + String(p.displayName || "该角色") + "」生成专属作息");
+    }
+  } catch (e) {
+    console.warn("[CASE] routine-gen failed:", e);
+    if (status) status.textContent = "生成失败:" + (e && e.message || "未知错误");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function bindCharRoutineGenButton() {
+  const el = document.getElementById("char-routine-gen-btn");
+  if (!el || el.dataset.bound === "1") return;
+  el.addEventListener("click", onClickCharRoutineGen);
+  el.dataset.bound = "1";
+}
+
 function applyCharFieldsToForm() {
   const p = readCharPersona();
   const map = [
@@ -50692,6 +50828,7 @@ function applyCharFieldsToForm() {
   renderCharAvatar(p.avatar || "");
   setCharMainWorldBookDraftIds(getCharMainWorldBookVolumeIds(p));
   refreshCharMainWorldBookBindChips();
+  applyCharRoutinePresetToForm(p);
   applyCharAltFieldsToForm();
   applyCharStudioFieldsToForm();
 }
@@ -50823,7 +50960,8 @@ function collectCharPersonaFromForm() {
     worldBookVolumeIds,
     defaultWorldBookVolumeId: worldBookVolumeIds[0] || "",
     altPersona,
-    altPersonaEnabled: Boolean(altOn && altPersona)
+    altPersonaEnabled: Boolean(altOn && altPersona),
+    routinePreset: readCharRoutinePresetFromForm()
   };
 }
 
@@ -68764,6 +68902,7 @@ document.getElementById("char-active-picker")?.addEventListener("change", (e) =>
 document.getElementById("char-persona-add")?.addEventListener("click", () => {
   addCharPersona();
 });
+bindCharRoutineGenButton();
 
 document.getElementById("char-lib-open-char")?.addEventListener("click", () => setCharLibStep("char-roster"));
 document.getElementById("char-lib-open-user")?.addEventListener("click", () => setCharLibStep("user-roster"));
