@@ -50374,6 +50374,12 @@ function refreshCharActivePicker() {
   }
   sel.value = st.activeId && st.items.some((x) => x.id === st.activeId) ? st.activeId : st.items[0]?.id || "";
   if (row) row.hidden = st.items.length === 0;
+  // 修复:activeId 失效(下拉自动选了第一项)时,主动写回 store,
+  // 否则 readCharPersona() 永远拿不到 (它只看 store.activeId 不看 DOM)
+  if (sel.value && sel.value !== st.activeId && st.items.some(x => x.id === sel.value)) {
+    st.activeId = sel.value;
+    writeCharPersonaStore(st);
+  }
 }
 
 function addCharPersona() {
