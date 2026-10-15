@@ -209,6 +209,14 @@
     return { content: String(content || ""), usage, finishReason };
   }
 
+  /**
+   * 配置查找顺序:
+   *   1. KV 表(用户在设置页保存的)有有效 apiKey -> 用它
+   *   2. KV 没 apiKey -> 找 ai_profiles 里第一个有完整 apiKey + baseUrl 的
+   *      (用户从 bootstrap-embedding-key.html 写入的,这种情况 KV 跟 ai_profiles 不互通)
+   *   3. 都没有 -> apiKey 空字符串(调用方检测到空会抛错提示去设置里填)
+   * 这样无论用户从哪个入口配的 key,都能跑。
+   */
   function getConfig() {
     const kv = K();
     const db = window.XXJ_DB;
@@ -220,9 +228,38 @@
         temperature: DEFAULT_TEMPERATURE
       };
     }
+    const kvKey = String(db.getKv(kv.AI_KEY) || "").trim();
+    const kvBase = String(db.getKv(kv.AI_BASE) || "").trim();
+    if (kvKey) {
+      // KV 有 key: 直接用(KV 是用户在设置页里手工保存的,优先级最高)
+      return {
+        baseUrl: normalizeBase(kvBase || DEFAULT_BASE),
+        apiKey: kvKey,
+        model: (String(db.getKv(kv.AI_MODEL) || DEFAULT_MODEL).trim() || DEFAULT_MODEL),
+        temperature: normalizeTemperature(db.getKv(kv.AI_TEMPERATURE))
+      };
+    }
+    // KV 没 key: fallback 到 ai_profiles
+    try {
+      const profiles = readProfiles();
+      for (const p of profiles) {
+        if (!p) continue;
+        const k = String(p.apiKey || "").trim();
+        if (!k) continue;
+        // 跳过像 imageGen profile (没有 baseUrl 的不一定是 chat profile,先看 tag 提示)
+        if (p.tag === "image") continue;
+        return {
+          baseUrl: normalizeBase(String(p.baseUrl || "").trim() || DEFAULT_BASE),
+          apiKey: k,
+          model: (String(p.model || "").trim() || DEFAULT_MODEL),
+          temperature: normalizeTemperature(p.temperature)
+        };
+      }
+    } catch { /* ignore */ }
+    // 都没有
     return {
-      baseUrl: normalizeBase(db.getKv(kv.AI_BASE) || DEFAULT_BASE),
-      apiKey: String(db.getKv(kv.AI_KEY) || ""),
+      baseUrl: normalizeBase(kvBase || DEFAULT_BASE),
+      apiKey: "",
       model: (String(db.getKv(kv.AI_MODEL) || DEFAULT_MODEL).trim() || DEFAULT_MODEL),
       temperature: normalizeTemperature(db.getKv(kv.AI_TEMPERATURE))
     };

@@ -30,3 +30,4 @@ scripts/test-jwt-vs-pyjwt.js
 scripts/do-amend.py
 scripts/do-commit.py
 scripts/commit-msg.txt
+scripts/make-deploy-zip.py
