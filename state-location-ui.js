@@ -32,11 +32,29 @@
   const BAR_ID = "xxj-loc-bar";
   const MODAL_ID = "xxj-loc-modal";
 
-  /** 默认显示哪一个 charId 的位置?(首个 loaded;UI 后续可加切换) */
+  /** 当前聊天里的角色是谁?
+ *   1. 优先读 CHAR_PERSONA_STORE.activeId (和聊天密谈一致的"激活角色")
+ *   2. 兑底:已加载 routine 的第一个(启动时未激活场景)
+   * 3. 最后兑底:null
+   */
   function currentCharId() {
-    if (!ROUTINE || typeof ROUTINE.listLoadedIds !== "function") return null;
-    const ids = ROUTINE.listLoadedIds();
-    return ids[0] || null;
+    // 1. CHAR_PERSONA_STORE.activeId — 跟 openChatFromNotifySnapshot / writeChatActiveThreadRef 同源
+    try {
+      const D = window.XXJ_DB;
+      if (D && D.getKv && D.K && D.K.CHAR_PERSONA_STORE) {
+        const store = D.getKv(D.K.CHAR_PERSONA_STORE);
+        const aid = store && store.activeId ? String(store.activeId).trim() : "";
+        if (aid) return aid;
+      }
+    } catch { /* ignore */ }
+
+    // 2. 兑底:已加载 routine 的第一个
+    if (ROUTINE && typeof ROUTINE.listLoadedIds === "function") {
+      const ids = ROUTINE.listLoadedIds();
+      if (ids.length) return ids[0];
+    }
+
+    return null;
   }
 
   function getCharDisplayName(charId) {
@@ -850,6 +868,26 @@
       .replace(/'/g, "&#39;");
   }
 
+  /** 上一次记录的当前 charId。变了就 re-render bar(聊天切换 / persona 切换场景) */
+  let _lastActiveCharId = null;
+  let _pollTimer = null;
+  function startActiveIdPolling() {
+    if (_pollTimer) return;
+    const tick = () => {
+      try {
+        const cur = currentCharId();
+        if (cur && cur !== _lastActiveCharId) {
+          _lastActiveCharId = cur;
+          render();
+        } else if (!cur && _lastActiveCharId) {
+          _lastActiveCharId = null;
+          render();
+        }
+      } catch { /* ignore */ }
+    };
+    _pollTimer = setInterval(tick, 1500);
+  }
+
   function tryMount() {
     if (!document.getElementById(BAR_ID)) {
       ensureBar();
@@ -883,6 +921,7 @@
     injectCss();
     tryMount();
     startObserver();
+    startActiveIdPolling();
     bindEvents();
     if (window.XXJ_DB && window.XXJ_DB.ready) {
       window.XXJ_DB.ready.then(() => {
