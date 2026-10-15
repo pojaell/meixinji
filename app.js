@@ -50736,13 +50736,29 @@ async function onClickCharRoutineGen() {
     return;
   }
   // 当前 persona(从表单实时读)
-  const p = readCharPersona();
+  let p = readCharPersona();
   // 合并表单上未持久化的 routinePreset(用户可能刚选过)
   const draftPreset = readCharRoutinePresetFromForm();
   if (draftPreset) p.routinePreset = draftPreset;
+  // persona 取不到: 兜底到 store 里第一个有显示名的角色(用户可能进了档案页但还没激活)
   if (!p || !p.id) {
-    if (status) status.textContent = "请先在角色档案激活一个角色";
-    return;
+    try {
+      const D2 = window.XXJ_DB;
+      if (D2 && D2.getKv && D2.K && D2.K.CHAR_PERSONA_STORE) {
+        const st = D2.getKv(D2.K.CHAR_PERSONA_STORE);
+        if (st && Array.isArray(st.items) && st.items.length) {
+          const fb = st.items.find(x => x && x.id && (x.displayName || x.summary)) || st.items[0];
+          if (fb && fb.id) {
+            p = { ...fb, ...p };
+            if (typeof showToast === "function") showToast("未检测到激活角色,已使用「" + String(p.displayName || "该角色") + "」");
+          }
+        }
+      }
+    } catch { /* ignore */ }
+    if (!p || !p.id) {
+      if (status) status.textContent = "请先新建一个角色档案";
+      return;
+    }
   }
   if (!p.displayName && !p.summary) {
     if (status) status.textContent = "请先填写显示名或人设概要";
