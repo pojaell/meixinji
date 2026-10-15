@@ -50782,8 +50782,26 @@ async function onClickCharRoutineGen() {
       }
     }
     const gen = await GEN.generateFromPersona(p, { presetHint });
-    if (!gen || !Array.isArray(gen.schedule)) {
-      if (status) status.textContent = "生成失败:LLM 未返回有效 JSON";
+    if (!gen || gen.ok !== true || !Array.isArray(gen.schedule)) {
+      // 把具体原因 + LLM 实际返回的前 60 字显示出来
+      let reason = "unknown";
+      let snippet = "";
+      if (gen && typeof gen === "object") {
+        reason = String(gen.reason || "unknown");
+        if (typeof gen.raw === "string") snippet = gen.raw.slice(0, 60).replace(/\s+/g, " ");
+        else if (gen.error) snippet = String(gen.error).slice(0, 60);
+      } else if (!gen) {
+        reason = "null-result";
+      }
+      const labelMap = {
+        "llm-call-failed": "LLM 调用失败",
+        "empty-response": "LLM 返回为空",
+        "no-json-array": "LLM 没返回 JSON 数组",
+        "json-parse-failed": "LLM 返回内容不是有效 JSON",
+        "normalize-empty": "LLM 返回的 schedule 校验失败(可能时段不齐)"
+      };
+      const label = labelMap[reason] || ("失败:" + reason);
+      if (status) status.textContent = label + (snippet ? " | " + snippet + "…" : "");
       return;
     }
     // 写到 IndexedDB 里的 routine(用 registry load + setSchedule + save)

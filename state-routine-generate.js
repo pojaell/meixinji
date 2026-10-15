@@ -80,7 +80,7 @@
     ].join("\n");
   }
 
-  /** 从 LLM 响应里抠出 JSON 数组(允许包在 markdown code block 里) */
+  /** 从 LLM 响应里抠出 JSON 数组(允许包在 markdown code block / 杂谈前后缀里) */
   function extractJson(text) {
     if (!text) return null;
     let s = String(text).trim();
@@ -92,6 +92,22 @@
     const rb = s.lastIndexOf("]");
     if (lb < 0 || rb < 0 || rb <= lb) return null;
     return s.slice(lb, rb + 1);
+  }
+
+  /** 容错解析:LLM 写的 json 偶尔会有尾随逗号、单引号之类,清掉再 parse */
+  function tryParseJsonLoose(text) {
+    if (!text) return null;
+    let s = String(text).trim();
+    // 先尝试严格 parse
+    try { return JSON.parse(s); } catch (_) { /* fallthrough */ }
+    // 清掉 ,] 或 ,} 的尾随逗号
+    s = s.replace(/,\s*([}\]])/g, "$1");
+    // 单引号 -> 双引号(只在非转义引号场景下),简单覆盖大多数 LLM 失误
+    if (!s.includes('"') && s.includes("'")) {
+      s = s.replace(/'/g, '"');
+    }
+    try { return JSON.parse(s); } catch (_) { /* fallthrough */ }
+    return null;
   }
 
   /** 校验 + 规范化 schedule */
@@ -178,17 +194,17 @@
       data = await RP_AI.chatCompletions(
         {
           messages: [
-            { role: "system", content: "你是日常作息分析师。严格输出 JSON 数组,不要 Markdown、不要解释。" },
+            { role: "system", content: "你是日常作息分析师。严格输出 JSON 数组,不要 Markdown、不要解释。完整输出所有时段(8-12 段)。" },
             { role: "user", content: prompt }
           ],
-          max_tokens: 900,
+          max_tokens: 2500,
           temperature: 0.6
         },
         { completionConfig: (opts && opts.completionConfig) || { tag: "routine-gen" } }
       );
     } catch (e) {
       console.warn("[ROUTINE_GEN] LLM call failed:", e);
-      return null;
+      return { ok: false, reason: "llm-call-failed", error: String(e && e.message || e) };
     }
 
     // 提取文本
@@ -201,24 +217,35 @@
       else if (typeof data?.text === "string") rawText = data.text;
     } catch { /* ignore */ }
     rawText = String(rawText || "").trim();
-    if (!rawText) return null;
+    if (!rawText) return { ok: false, reason: "empty-response", raw: "" };
 
     const jsonText = extractJson(rawText);
     if (!jsonText) {
       console.warn("[ROUTINE_GEN] 找不到 JSON:", rawText.slice(0, 200));
-      return null;
+      return { ok: false, reason: "no-json-array", raw: rawText.slice(0, 240) };
     }
-    let parsed;
-    try {
-      parsed = JSON.parse(jsonText);
-    } catch (e) {
-      console.warn("[ROUTINE_GEN] JSON parse failed:", e, jsonText.slice(0, 200));
-      return null;
+    let parsed = tryParseJsonLoose(jsonText);
+    if (!parsed) {
+      // 退一步:如果整段能 parse,可能是 array 嵌套在 object 里 — 找它里面的数组
+      const objTry = tryParseJsonLoose(rawText);
+      if (Array.isArray(objTry)) {
+        parsed = objTry;
+      } else if (objTry && typeof objTry === "object") {
+        // 取第一个数组字段
+        for (const k of Object.keys(objTry)) {
+          if (Array.isArray(objTry[k])) { parsed = objTry[k]; break; }
+        }
+      }
+    }
+    if (!parsed) {
+      console.warn("[ROUTINE_GEN] JSON parse failed:", jsonText.slice(0, 200));
+      return { ok: false, reason: "json-parse-failed", raw: jsonText.slice(0, 240) };
     }
     const schedule = normalizeSchedule(parsed);
-    if (!schedule) return null;
+    if (!schedule) return { ok: false, reason: "normalize-empty", raw: jsonText.slice(0, 240) };
 
     return {
+      ok: true,
       schedule,
       overrides: [],
       meta: {
