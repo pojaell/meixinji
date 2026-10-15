@@ -1,4 +1,4 @@
-const CACHE_NAME = "xxj-pwa-v237";
+const CACHE_NAME = "xxj-pwa-v238";
 const KEEPALIVE_PERIODIC_TAG = "xxj-keepalive";
 const SCHEDULE_IDB = "xxj_sw_schedule";
 const SCHEDULE_STORE = "due";
@@ -10,6 +10,7 @@ const PRECACHE_URLS = [
   "./style.css",
   "./db.js?v=314",
   "./inline-html.js?v=348",
+  "./state-routine-table.js",
   "./media-blob.js?v=314",
   "./ringtones.js?v=314",
   "./voice-ringtone-picker.js?v=314",
