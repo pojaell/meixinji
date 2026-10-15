@@ -31,3 +31,5 @@ scripts/do-amend.py
 scripts/do-commit.py
 scripts/commit-msg.txt
 scripts/make-deploy-zip.py
+
+.tmp/  # BEH-046 临时脚本/中间产物,可忽略

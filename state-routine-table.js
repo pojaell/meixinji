@@ -35,6 +35,20 @@
     })) : [];
     item.__routineScheduleUpdatedAt = Date.now();
     D.setKv(D.K.CHAR_PERSONA_STORE, st);
+    // 同人设一样同步到 STATE_ROUTINES bundle byCharacter[charId],
+    // 不否则 LI · 位置条 / CASE 会拿到 cached CharacterRoutine 里旧的 schedule。
+    // 这里 fire-and-forget,失败不影响 persona 写入。
+    try {
+      const ROUTINE = window.XXJ_ROUTINE;
+      if (ROUTINE && typeof ROUTINE.applyExternalSchedule === "function") {
+        const copy = item.routineSchedule.map(s => ({ ...s }));
+        ROUTINE.applyExternalSchedule(charId, copy, { source: "persona-edit" }).catch((e) => {
+          console.warn("[CASE] applyExternalSchedule (after persona write) failed:", e);
+        });
+      }
+    } catch (err) {
+      console.warn("[CASE] applyExternalSchedule dispatch failed:", err);
+    }
     return true;
   }
 

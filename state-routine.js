@@ -409,6 +409,61 @@
     });
   }
 
+  /**
+   * 外部入口:把某角色的作息覆写为指定 schedule,
+   * 并保证 LI·位置条 / CASE·调度走在同一份新数据上。
+   * 为什么要这个函数:registry 里缓存了 CharacterRoutine,
+   * 默认途径 load() 会是「命中缓存直接返回」不再调用 defaultForCharacter,
+   * 所以只写 persona.routineSchedule 不能让 LI 拿到新表。
+   * 这里会顺手:
+   *   1. 清掉该 charId 的缓存
+   *   2. 重新走 defaultForCharacter / STATE_ROUTINES (新加载,会拿到 persona.routineSchedule)
+   *   3. setSchedule 覆写
+   *   4. save 落盘到 STATE_ROUTINES bundle (LI·位置条读这边)
+   *   5. emit RoutineChanged 通知订阅者
+   * 不传 opts.preserveEnabled:true 时会连 routineEnabled 一起开。
+   * @param {string} charId
+   * @param {Array<{startHour:number,endHour:number,location:string,activity:string,busy?:string,moodShift?:number,allowProactive?:(boolean|'busy')}>} schedule
+   * @param {{ source?: string }} [opts]
+   */
+  async function applyExternalSchedule(charId, schedule, opts) {
+    if (!charId) return false;
+    const list = Array.isArray(schedule) ? schedule : [];
+    // 1) 失效缓存
+    try {
+      if (registry && typeof registry.delete === "function") registry.delete(String(charId));
+    } catch (err) {
+      console.warn("[CASE] applyExternalSchedule invalidate failed:", err);
+    }
+    // 2) 重新加载(会重新走 defaultForCharacter 拿到 persona.routineSchedule / 旧 STATE_ROUTINES)
+    let routine = null;
+    try {
+      routine = await load(charId);
+    } catch (err) {
+      console.warn("[CASE] applyExternalSchedule load failed:", err);
+      return false;
+    }
+    if (!routine || typeof routine.setSchedule !== "function") return false;
+    // 3) 用新 schedule 覆写
+    routine.setSchedule(list);
+    routine.setEnabled(true);
+    // 4) 落盘到 STATE_ROUTINES(byCharacter[charId])
+    try {
+      await save(routine);
+    } catch (err) {
+      console.warn("[CASE] applyExternalSchedule save failed:", err);
+    }
+    // 5) 补发一次事件(让订阅者 - LI·位置条 / invite - 重新从 registry 读最新 schedule)
+    if (STATE_EVENTS) {
+      STATE_EVENTS.emit(STATE_EVENTS.EVT.ROUTINE_CHANGED, {
+        charId,
+        source: (opts && opts.source) || "external-schedule",
+        routine
+      });
+    }
+    return true;
+  }
+
   /** 为一批角色预加载(常用启动路径) */
   async function ensureForAll(characters) {
     const list = Array.isArray(characters) ? characters : [];
@@ -495,6 +550,7 @@
     CharacterRoutine,
     matchSlot,
     load, save,
+    applyExternalSchedule,
     current, atHour, today, predictNextBreakpoint,
     recordEncounter,
     currentText,
